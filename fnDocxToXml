@@ -1,0 +1,37 @@
+// fnDocxToXml
+// Input: the Content (binary) of a .docx OR a Word .xml file
+// Output: Word XML in the same "pkg:package" shape as File > Save As > Word XML,
+// so all existing steps keep working unchanged.
+// .xml files are passed through untouched.
+(FileContent as binary) as binary =>
+let
+Bytes = Binary.Buffer(FileContent),
+IsZip = Text.FromBinary(Binary.Range(Bytes, 0, 2)) = "PK",
+U16 = (pos as number) as number =>
+BinaryFormat.ByteOrder(BinaryFormat.UnsignedInteger16,
+ByteOrder.LittleEndian)(Binary.Range(Bytes, pos, 2)),
+U32 = (pos as number) as number =>
+BinaryFormat.ByteOrder(BinaryFormat.UnsignedInteger32,
+ByteOrder.LittleEndian)(Binary.Range(Bytes, pos, 4)),
+// End of the zip's central directory (Word never adds a zip comment)
+EOCD = Binary.Length(Bytes) - 22,
+Count = U16(EOCD + 10),
+CDStart = U32(EOCD + 16),
+// List every file inside the .docx
+Entries = List.Generate(
+() => [i = 0, pos = CDStart],
+each [i] < Count,
+each [i = [i] + 1, pos = [pos] + 46 + U16([pos] + 28) + U16([pos] + 30) + U16([pos] + 32)],
+each [Name = Text.FromBinary(Binary.Range(Bytes, [pos] + 46, U16([pos] + 28))),
+Method = U16([pos] + 10),
+CompSize = U32([pos] + 20),
+LocalOffset = U32([pos] + 42)]),
+// Take word/document.xml and decompress it
+Entry = List.First(List.Select(Entries, each [Name] = "word/document.xml")),
+LocalPos = Entry[LocalOffset],
+DataStart = LocalPos + 30 + U16(LocalPos + 26) + U16(LocalPos + 28),
+Raw = Binary.Range(Bytes, DataStart, Entry[CompSize]),
+DocXml = if Entry[Method] = 8 then Binary.Decompress(Raw, Compression.Deflate) else
+Raw,
+// Wrap it like Word's "Save as XML" output
+DocText = Text.FromBinary(DocXml, TextEncoding.Utf8),
