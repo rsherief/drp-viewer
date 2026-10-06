@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>File Viewer</title>
+<style>
+body{margin:0;font:15px system-ui,sans-serif;display:flex;height:100vh;color:#222}
+nav{width:300px;overflow:auto;border-right:1px solid #ddd;padding:12px;box-sizing:border-box;background:#f7f7f7}
+nav a{display:block;padding:4px 6px;color:#0645ad;text-decoration:none;word-break:break-all;border-radius:4px}
+nav a:hover,nav a.on{background:#e3ecf9}
+main{flex:1;overflow:auto;padding:16px}
+pre{white-space:pre-wrap;word-break:break-word;font:13px ui-monospace,monospace}
+@media(max-width:700px){body{flex-direction:column}nav{width:auto;height:35vh;border:0;border-bottom:1px solid #ddd}}
+</style></head><body>
+<nav id="list">Loading…</nav><main id="view">Select a file.</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+const owner=location.hostname.split('.')[0], repo=location.pathname.split('/')[1];
+const TEXT=/\.(txt|md|pq|xml|json|csv|ps1|sh|py|js|html|css|yml|yaml|log)$/i, SKIP=/^(index\.html|\.git.*|publish\.sh)$/;
+const $=id=>document.getElementById(id);
+async function open(path,el){
+  document.querySelectorAll('nav a').forEach(a=>a.classList.remove('on'));el.classList.add('on');
+  const v=$('view'), url=encodeURI(path);
+  if(!TEXT.test(path)){v.innerHTML=`<p>Preview not available. <a href="${url}" download>Download ${path}</a></p>`;return}
+  const t=await (await fetch(url)).text();
+  if(/\.md$/i.test(path)) v.innerHTML=marked.parse(t);
+  else{const p=document.createElement('pre');p.textContent=t;v.replaceChildren(p)}
+}
+(async()=>{
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`);
+    const files=(await r.json()).tree.filter(f=>f.type==='blob'&&!SKIP.test(f.path)).map(f=>f.path);
+    if(!files.length){$('list').textContent='No files yet.';return}
+    $('list').replaceChildren(...files.map(p=>{
+      const a=document.createElement('a');a.href='#';a.textContent=p;a.onclick=e=>{e.preventDefault();open(p,a)};return a}));
+  }catch(e){$('list').textContent='Could not load file list: '+e}
+})();
+</script></body></html>
